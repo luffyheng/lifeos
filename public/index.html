@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-Hans">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Life Agent" />
+    <meta name="description" content="Life Agent — your private second brain." />
+    <title>Life Agent</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icons/life-agent.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icons/life-agent.svg" />
+    <link rel="stylesheet" href="/styles.css?v=2" />
+  </head>
+  <body>
+    <div id="app">
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-top">
+          <button class="sidebar-icon mobile-only" id="close-sidebar" aria-label="关闭侧边栏">×</button>
+          <button class="brand" id="brand-button" aria-label="Life Agent 首页"><span class="brand-mark">L</span><span>Life Agent</span></button>
+          <button class="sidebar-icon" id="collapse-sidebar" aria-label="收起侧边栏">‹</button>
+        </div>
+        <button class="new-chat" id="new-chat"><span>＋</span><span>新对话</span></button>
+        <div class="history">
+          <p>对话</p>
+          <button class="history-item active" id="current-chat-title">新的对话</button>
+        </div>
+        <div class="sidebar-spacer"></div>
+        <button class="sidebar-row" id="install-app" hidden><span>⇩</span><span>安装 Life Agent</span></button>
+        <button class="sidebar-row" id="theme-toggle-side"><span id="theme-icon-side">☾</span><span id="theme-label-side">深色模式</span></button>
+        <button class="sidebar-row" data-action="open-settings"><span>⚙</span><span>设置</span></button>
+        <button class="profile-row" data-action="open-settings"><span class="avatar">L</span><span><strong id="profile-name">你的空间</strong><small id="connection-status">未登录</small></span></button>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <button class="top-icon" id="open-sidebar" aria-label="打开侧边栏">☰</button>
+          <button class="model-name">Life Agent <span>⌄</span></button>
+          <div class="top-actions">
+            <button class="top-icon" id="theme-toggle" aria-label="切换颜色模式">☾</button>
+            <button class="top-icon" data-action="open-settings" aria-label="设置">•••</button>
+          </div>
+        </header>
+
+        <section class="chat" id="chat-view">
+          <div class="chat-scroll" id="chat-scroll">
+            <div class="conversation" id="conversation">
+              <div class="empty-state" id="empty-state"><span class="empty-logo">L</span><h1>有什么我可以帮你？</h1></div>
+              <div id="messages" class="messages" aria-live="polite"></div>
+            </div>
+          </div>
+          <div class="composer-area">
+            <div class="suggestions" id="suggestions">
+              <button data-prompt="daily">记录今天</button>
+              <button data-prompt="decision">帮我想清楚</button>
+              <button data-prompt="weekly">回顾这一周</button>
+            </div>
+            <form class="composer" id="composer">
+              <textarea id="message-input" rows="1" placeholder="询问任何事情" aria-label="输入消息"></textarea>
+              <div class="composer-actions"><button type="button" class="round-button" aria-label="添加内容">＋</button><span class="privacy">私人 Life Agent</span><button type="submit" class="send" aria-label="发送">↑</button></div>
+            </form>
+            <p class="disclaimer">Life Agent 可能会犯错。重要决定请自行确认。</p>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="settings-dialog" class="dialog">
+      <div class="dialog-card">
+        <button class="dialog-close" data-action="close-settings" aria-label="关闭">×</button>
+        <h2>设置</h2>
+        <div class="setting-row"><div><strong>颜色模式</strong><small>选择你喜欢的界面</small></div><select id="theme-select"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></div>
+        <div class="setting-row account-setting"><div><strong>账号</strong><small id="dialog-status-detail">连接后启用私人记忆与跨设备同步</small></div><span class="status-pill" id="dialog-status">未登录</span></div>
+        <div class="setting-row" id="install-setting" hidden><div><strong>安装应用</strong><small id="install-detail">安装到主屏幕，像原生 App 一样打开</small></div><button class="install-button" id="install-app-settings">安装</button></div>
+        <form id="auth-form" class="auth-controls"><input id="auth-email" type="email" autocomplete="email" placeholder="输入你的邮箱" /><button type="submit">发送登录链接</button></form>
+        <button class="danger-button" type="button" id="signout-button" hidden>退出登录</button>
+        <p class="settings-note">新账号从空白开始。目标与洞察只会根据你之后的真实对话产生，不使用示范资料。</p>
+      </div>
+    </dialog>
+    <script src="/config.js"></script><script type="module" src="/app.js?v=3"></script>
+  </body>
+</html>
