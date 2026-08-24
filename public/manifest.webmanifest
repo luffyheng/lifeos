@@ -1,0 +1,22 @@
+{
+  "id": "/",
+  "name": "Life Agent",
+  "short_name": "Life Agent",
+  "description": "你的私人 Life Agent 与长期第二大脑。",
+  "lang": "zh-Hans",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "categories": ["lifestyle", "productivity"],
+  "icons": [
+    { "src": "/icons/life-agent.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icons/life-agent-maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "新对话", "short_name": "新对话", "url": "/?new=1", "icons": [{ "src": "/icons/life-agent.svg", "sizes": "any", "type": "image/svg+xml" }] }
+  ]
+}
