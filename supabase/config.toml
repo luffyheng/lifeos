@@ -1,0 +1,4 @@
+project_id = "life-agent"
+
+[functions.life-agent]
+verify_jwt = false
