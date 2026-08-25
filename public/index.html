@@ -13,7 +13,7 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icons/life-agent.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/icons/life-agent.svg" />
-    <link rel="stylesheet" href="/styles.css?v=2" />
+    <link rel="stylesheet" href="/styles.css?v=6" />
   </head>
   <body>
     <div id="app">
@@ -24,6 +24,7 @@
           <button class="sidebar-icon" id="collapse-sidebar" aria-label="收起侧边栏">‹</button>
         </div>
         <button class="new-chat" id="new-chat"><span>＋</span><span>新对话</span></button>
+        <button class="sidebar-row view-link" id="health-link"><span>♡</span><span>健康</span></button>
         <div class="history">
           <p>对话</p>
           <button class="history-item active" id="current-chat-title">新的对话</button>
@@ -38,7 +39,7 @@
       <main class="main">
         <header class="topbar">
           <button class="top-icon" id="open-sidebar" aria-label="打开侧边栏">☰</button>
-          <button class="model-name">Life Agent <span>⌄</span></button>
+          <button class="model-name" id="page-title">Life Agent <span>⌄</span></button>
           <div class="top-actions">
             <button class="top-icon" id="theme-toggle" aria-label="切换颜色模式">☾</button>
             <button class="top-icon" data-action="open-settings" aria-label="设置">•••</button>
@@ -60,9 +61,36 @@
             </div>
             <form class="composer" id="composer">
               <textarea id="message-input" rows="1" placeholder="询问任何事情" aria-label="输入消息"></textarea>
-              <div class="composer-actions"><button type="button" class="round-button" aria-label="添加内容">＋</button><span class="privacy">私人 Life Agent</span><button type="submit" class="send" aria-label="发送">↑</button></div>
+              <div class="composer-actions"><button type="button" class="round-button" aria-label="添加内容">＋</button><span class="privacy">Enter 换行 · Ctrl/⌘ + Enter 发送</span><button type="submit" class="send" aria-label="发送">↑</button></div>
             </form>
             <p class="disclaimer">Life Agent 可能会犯错。重要决定请自行确认。</p>
+          </div>
+        </section>
+
+        <section class="health-view" id="health-view" hidden>
+          <div class="health-shell">
+            <div class="health-heading"><div><p>你的健康趋势</p><h1>健康</h1></div><button class="health-back" id="health-back">返回对话</button></div>
+            <div class="health-login" id="health-login" hidden><h2>登录后开始记录</h2><p>你的健康资料只会储存在自己的私人账号。</p><button data-action="open-settings">登录 / 注册</button></div>
+            <div id="health-content">
+              <div class="health-cards">
+                <article><span>昨晚睡眠</span><strong id="health-sleep">—</strong><small>小时</small></article>
+                <article><span>今日能量</span><strong id="health-energy">—</strong><small>/ 10</small></article>
+                <article><span>今日心情</span><strong id="health-mood">—</strong><small>/ 10</small></article>
+                <article><span>今日运动</span><strong id="health-exercise">—</strong><small>分钟</small></article>
+              </div>
+              <div class="health-grid">
+                <form class="health-panel health-form" id="health-form">
+                  <div class="panel-heading"><div><h2>每日记录</h2><p>一分钟记下今天的状态</p></div><input id="health-date" type="date" required /></div>
+                  <label>睡眠（小时）<input id="sleep-hours" type="number" min="0" max="24" step="0.5" placeholder="7.5" /></label>
+                  <label>能量（1–10）<input id="energy-score" type="range" min="1" max="10" value="5" /><output id="energy-output">5</output></label>
+                  <label>心情（1–10）<input id="mood-score" type="range" min="1" max="10" value="5" /><output id="mood-output">5</output></label>
+                  <label>运动（分钟）<input id="exercise-minutes" type="number" min="0" max="1440" step="5" placeholder="30" /></label>
+                  <label>备注（可选）<textarea id="health-note" rows="2" placeholder="今天身体感觉如何？"></textarea></label>
+                  <button type="submit" class="health-save">保存今天</button><p class="form-status" id="health-status"></p>
+                </form>
+                <section class="health-panel trend-panel"><div class="panel-heading"><div><h2>最近 7 天</h2><p>能量与心情趋势</p></div></div><div class="trend-chart" id="health-chart"></div><div class="chart-legend"><span><i class="energy-dot"></i>能量</span><span><i class="mood-dot"></i>心情</span></div></section>
+              </div>
+            </div>
           </div>
         </section>
       </main>
@@ -75,11 +103,13 @@
         <div class="setting-row"><div><strong>颜色模式</strong><small>选择你喜欢的界面</small></div><select id="theme-select"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></div>
         <div class="setting-row account-setting"><div><strong>账号</strong><small id="dialog-status-detail">连接后启用私人记忆与跨设备同步</small></div><span class="status-pill" id="dialog-status">未登录</span></div>
         <div class="setting-row" id="install-setting" hidden><div><strong>安装应用</strong><small id="install-detail">安装到主屏幕，像原生 App 一样打开</small></div><button class="install-button" id="install-app-settings">安装</button></div>
-        <form id="auth-form" class="auth-controls"><input id="auth-email" type="email" autocomplete="email" placeholder="输入你的邮箱" /><button type="submit">发送登录链接</button></form>
+        <form id="auth-form" class="auth-controls auth-password"><input id="auth-email" type="email" autocomplete="email" placeholder="账号（Email）" /><input id="auth-password" type="password" autocomplete="current-password" minlength="8" placeholder="密码" /><div class="auth-buttons"><button type="submit">登录</button><button type="button" class="secondary-auth" id="signup-button">注册</button></div></form>
+        <form id="password-form" class="auth-controls auth-password" hidden><input id="new-password" type="password" autocomplete="new-password" minlength="8" placeholder="设置新密码（至少 8 位）" /><button type="submit">保存密码</button></form>
         <button class="danger-button" type="button" id="signout-button" hidden>退出登录</button>
         <p class="settings-note">新账号从空白开始。目标与洞察只会根据你之后的真实对话产生，不使用示范资料。</p>
       </div>
     </dialog>
-    <script src="/config.js"></script><script type="module" src="/app.js?v=3"></script>
+    <script src="/config.js"></script><script type="module" src="/app.js?v=6"></script>
   </body>
 </html>
+
