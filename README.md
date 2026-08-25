@@ -4,9 +4,13 @@ A mobile-first, ChatGPT-like personal operating system. The MVP includes chat, a
 
 ## What works immediately
 
-Open the app without configuration to use **demo mode**. Chat, goals, memory chips, trend cards, navigation, responsive layout, and offline caching all work locally. Demo data is kept only in the current browser.
+- Cloud-synced conversations and long-term memory across desktop, mobile, and the installed PWA.
+- Chat-first health logging: mention sleep, exercise, energy, or mood naturally and the agent updates the health trend.
+- Voice transcription through the server-side Edge Function; audio is never sent directly to OpenAI with a browser API key.
+- Desktop keyboard behavior: Enter sends and Shift+Enter inserts a new line.
+- Conversation deletion, light/dark mode, automatic life-area tagging, goals, weekly reviews, and current Malaysia time context.
 
-After Supabase is configured, AI calls go through a Supabase Edge Function. `OPENAI_API_KEY` is never included in browser code.
+AI calls go through a Supabase Edge Function. `OPENAI_API_KEY` is never included in browser code.
 
 ## Local preview
 
@@ -84,7 +88,15 @@ Browser PWA
         └── saves messages, tags, signals, memories
 ```
 
-Core tables are intentionally extensible: `profiles`, `conversations`, `messages`, `memories`, `goals`, `daily_checkins`, `weekly_reviews`, and `metric_entries`. Flexible `metadata` JSON fields allow integrations such as Strava, bank exports, calendar signals, or custom templates without redesigning the base schema.
+Core tables are intentionally extensible: `profiles`, `conversations`, `messages`, `memories`, `goals`, `daily_checkins`, `weekly_reviews`, `metric_entries`, `health_activities`, and `health_sleep`.
+
+## Health integrations
+
+The database and UI are ready for Strava and Huawei Health, but each provider still needs its own developer credentials before live syncing can be enabled.
+
+For Strava, create an API application, use `ivrmqrbelphfhltcinod.supabase.co` as the callback domain, and store the client ID and secret as Supabase Edge Function secrets (never in `public/config.js`). The OAuth callback should exchange the temporary code server-side, store encrypted refresh-token data, and upsert activities into `health_activities`.
+
+Huawei Health requires Health Kit approval and user authorization. Sleep records should be normalized into `health_sleep`; the chat and dashboard can then analyze Strava training, Huawei sleep, and conversational notes together.
 
 ## Security checklist
 
@@ -95,9 +107,9 @@ Core tables are intentionally extensible: `profiles`, `conversations`, `messages
 - For production, restrict the Edge Function CORS origin to your deployed domain and enable normal Supabase JWT verification after the authentication screen is enabled.
 - Health and finance content is positioned as reflection/support, not diagnosis or individualized regulated advice.
 
-## MVP next steps
+## Next steps
 
-1. Sync the visual dashboard from `daily_checkins`, `weekly_reviews`, and `metric_entries` instead of demo seed data.
-2. Add memory confirmation/editing so the user controls what remains remembered.
-3. Add scheduled weekly summaries and reminders.
-4. Add optional integrations one at a time, starting with the signal that has the clearest value.
+1. Add Strava client credentials and complete the OAuth callback.
+2. Apply for Huawei Health Kit access and complete its authorization flow.
+3. Add memory confirmation/editing so the user controls what remains remembered.
+4. Add scheduled weekly summaries and reminders.
