@@ -13,7 +13,7 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icons/life-agent.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/icons/life-agent.svg" />
-    <link rel="stylesheet" href="/styles.css?v=6" />
+    <link rel="stylesheet" href="/styles.css?v=9" />
   </head>
   <body>
     <div id="app">
@@ -27,7 +27,7 @@
         <button class="sidebar-row view-link" id="health-link"><span>♡</span><span>健康</span></button>
         <div class="history">
           <p>对话</p>
-          <button class="history-item active" id="current-chat-title">新的对话</button>
+          <div id="history-list"><button class="history-item active">新的对话</button></div>
         </div>
         <div class="sidebar-spacer"></div>
         <button class="sidebar-row" id="install-app" hidden><span>⇩</span><span>安装 Life Agent</span></button>
@@ -61,7 +61,7 @@
             </div>
             <form class="composer" id="composer">
               <textarea id="message-input" rows="1" placeholder="询问任何事情" aria-label="输入消息"></textarea>
-              <div class="composer-actions"><button type="button" class="round-button" aria-label="添加内容">＋</button><span class="privacy">Enter 换行 · Ctrl/⌘ + Enter 发送</span><button type="submit" class="send" aria-label="发送">↑</button></div>
+              <div class="composer-actions"><button type="button" class="round-button mic-button" id="mic-button" aria-label="开始录�" title="语音输入">◉</button><span class="privacy" id="composer-status">Enter 发送 · Shift + Enter 换行</span><button type="submit" class="send" aria-label="发送">↑</button></div>
             </form>
             <p class="disclaimer">Life Agent 可能会犯错。重要决定请自行确认。</p>
           </div>
@@ -79,17 +79,19 @@
                 <article><span>今日运动</span><strong id="health-exercise">—</strong><small>分钟</small></article>
               </div>
               <div class="health-grid">
-                <form class="health-panel health-form" id="health-form">
-                  <div class="panel-heading"><div><h2>每日记录</h2><p>一分钟记下今天的状态</p></div><input id="health-date" type="date" required /></div>
-                  <label>睡眠（小时）<input id="sleep-hours" type="number" min="0" max="24" step="0.5" placeholder="7.5" /></label>
-                  <label>能量（1–10）<input id="energy-score" type="range" min="1" max="10" value="5" /><output id="energy-output">5</output></label>
-                  <label>心情（1–10）<input id="mood-score" type="range" min="1" max="10" value="5" /><output id="mood-output">5</output></label>
-                  <label>运动（分钟）<input id="exercise-minutes" type="number" min="0" max="1440" step="5" placeholder="30" /></label>
-                  <label>备注（可选）<textarea id="health-note" rows="2" placeholder="今天身体感觉如何？"></textarea></label>
-                  <button type="submit" class="health-save">保存今天</button><p class="form-status" id="health-status"></p>
-                </form>
-                <section class="health-panel trend-panel"><div class="panel-heading"><div><h2>最近 7 天</h2><p>能量与心情趋势</p></div></div><div class="trend-chart" id="health-chart"></div><div class="chart-legend"><span><i class="energy-dot"></i>能量</span><span><i class="mood-dot"></i>心情</span></div></section>
+                <section class="health-panel chat-health-panel">
+                  <div class="panel-heading"><div><h2>通过对话记录</h2><p>不用填表，像平常一样告诉 Life Agent</p></div></div>
+                  <blockquote>“昨晚睡了 7.5 小时，今天跑了 30 分钟，能量大概 6。”</blockquote>
+                  <p class="health-help">Life Agent 会自动整理睡眠、运动、能量与心情，并结合长期记忆帮你分析生活状态。</p>
+                  <button class="health-primary" id="health-chat-button">去聊天记录</button>
+                </section>
+                <section class="health-panel integrations-panel">
+                  <div class="panel-heading"><div><h2>自动同步</h2><p>设备数据与对话会汇到同一个人生记录</p></div></div>
+                  <div class="integration-row"><span class="integration-logo strava-logo">S</span><div><strong>Strava</strong><small>跑步、骑行与训练活动</small></div><a href="https://www.strava.com/settings/api" target="_blank" rel="noreferrer">建立连接</a></div>
+                  <div class="integration-row"><span class="integration-logo huawei-logo">H</span><div><strong>Huawei Health</strong><small>睡眠与恢复数据，接口已预留</small></div><span class="coming-soon">下一步</span></div>
+                </section>
               </div>
+              <section class="health-panel trend-panel"><div class="panel-heading"><div><h2>最近 7 天</h2><p>能量与心情趋势</p></div><span class="form-status" id="health-status"></span></div><div class="trend-chart" id="health-chart"></div><div class="chart-legend"><span><i class="energy-dot"></i>能量</span><span><i class="mood-dot"></i>心情</span></div></section>
             </div>
           </div>
         </section>
@@ -103,13 +105,12 @@
         <div class="setting-row"><div><strong>颜色模式</strong><small>选择你喜欢的界面</small></div><select id="theme-select"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></div>
         <div class="setting-row account-setting"><div><strong>账号</strong><small id="dialog-status-detail">连接后启用私人记忆与跨设备同步</small></div><span class="status-pill" id="dialog-status">未登录</span></div>
         <div class="setting-row" id="install-setting" hidden><div><strong>安装应用</strong><small id="install-detail">安装到主屏幕，像原生 App 一样打开</small></div><button class="install-button" id="install-app-settings">安装</button></div>
-        <form id="auth-form" class="auth-controls auth-password"><input id="auth-email" type="email" autocomplete="email" placeholder="账号（Email）" /><input id="auth-password" type="password" autocomplete="current-password" minlength="8" placeholder="密码" /><div class="auth-buttons"><button type="submit">登录</button><button type="button" class="secondary-auth" id="signup-button">注册</button></div></form>
+        <form id="auth-form" class="auth-controls auth-password"><input id="auth-email" type="email" autocomplete="username" value="luffyheng@gmail.com" readonly aria-label="账号" /><input id="auth-password" type="password" autocomplete="current-password" minlength="8" placeholder="密码" /><button type="submit">登录</button></form>
         <form id="password-form" class="auth-controls auth-password" hidden><input id="new-password" type="password" autocomplete="new-password" minlength="8" placeholder="设置新密码（至少 8 位）" /><button type="submit">保存密码</button></form>
         <button class="danger-button" type="button" id="signout-button" hidden>退出登录</button>
-        <p class="settings-note">新账号从空白开始。目标与洞察只会根据你之后的真实对话产生，不使用示范资料。</p>
+        <p class="settings-note">这是 Luffy 的私人 Life Agent，不开放注册。目标与洞察只会根据真实对话产生。</p>
       </div>
     </dialog>
-    <script src="/config.js"></script><script type="module" src="/app.js?v=6"></script>
+    <script src="/config.js"></script><script type="module" src="/app.js?v=9"></script>
   </body>
 </html>
-
