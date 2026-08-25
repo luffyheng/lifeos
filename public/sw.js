@@ -1,5 +1,5 @@
-const CACHE = "life-agent-v6";
-const ASSETS = ["/", "/styles.css?v=6", "/app.js?v=6", "/config.js", "/manifest.webmanifest", "/icons/life-agent.svg", "/icons/life-agent-maskable.svg"];
+const CACHE = "life-agent-v9";
+const ASSETS = ["/", "/styles.css?v=9", "/app.js?v=9", "/config.js", "/manifest.webmanifest", "/icons/life-agent.svg", "/icons/life-agent-maskable.svg"];
 self.addEventListener("install", event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting())));
 self.addEventListener("activate", event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key)))).then(() => self.clients.claim())));
 self.addEventListener("fetch", event => {
@@ -8,4 +8,3 @@ self.addEventListener("fetch", event => {
     const copy = response.clone(); caches.open(CACHE).then(cache => cache.put(event.request, copy)); return response;
   }).catch(() => caches.match(event.request).then(hit => hit || caches.match("/"))));
 });
-
