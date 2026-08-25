@@ -1,26 +1,39 @@
 const cfg = window.LIFE_AGENT_CONFIG || {};
 const configured = Boolean(cfg.supabaseUrl && cfg.supabaseAnonKey);
+const allowedEmail = "luffyheng@gmail.com";
 let session = restoreSessionFromUrl() || readJson("life-agent-session");
 let installPrompt = null;
 let healthRows = [];
+let syncTimer = null;
+let mediaRecorder = null;
+let microphoneStream = null;
+let audioChunks = [];
 const identity = session?.access_token ? decodeJwt(session.access_token) : null;
 if (session && identity) session.user = { id:identity.sub, email:identity.email || session.user?.email || "已登录" };
+if (session?.user?.email?.toLowerCase() !== allowedEmail) {
+  session = null;
+  localStorage.removeItem("life-agent-session");
+}
 
 const storageKey = session?.user?.id ? `life-agent-user-${session.user.id}` : "life-agent-guest-v2";
-const state = { messages:[], memories:[], goals:[], ...readJson(storageKey) };
+const cachedState = readJson(storageKey);
+const state = session ? { conversations:[], currentConversationId:cachedState.currentConversationId || null, messages:[], memories:[], goals:[] } : { conversations:[], currentConversationId:null, messages:[], memories:[], goals:[], ...cachedState };
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const persist = () => localStorage.setItem(storageKey, JSON.stringify(state));
 
-function init() {
+async function init() {
   initTheme();
   initInstall();
   updateAccountUi();
-  ensureSession().then(updateAccountUi);
   renderMessages();
+  renderConversationList();
   bindEvents();
-  setTodayDate();
   if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("/sw.js").catch(() => {});
+  const activeSession = await ensureSession();
+  updateAccountUi();
+  if (activeSession) await syncCloudState(state.currentConversationId).catch(showSyncError);
+  startCloudSync();
 }
 
 function bindEvents() {
@@ -29,14 +42,24 @@ function bindEvents() {
   $$('[data-prompt]').forEach(button => button.addEventListener("click", () => usePrompt(button.dataset.prompt)));
   $("#composer").addEventListener("submit", sendMessage);
   $("#message-input").addEventListener("input", resizeComposer);
-  $("#message-input").addEventListener("keydown", event => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.isComposing) { event.preventDefault(); $("#composer").requestSubmit(); } });
+  $("#mic-button").addEventListener("click", toggleDictation);
+  $("#message-input").addEventListener("keydown", event => {
+    if (matchMedia("(pointer: fine)").matches && event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+      event.preventDefault();
+      $("#composer").requestSubmit();
+    }
+  });
   $("#new-chat").addEventListener("click", newChat);
+  $("#history-list").addEventListener("click", event => {
+    const deleteButton=event.target.closest("[data-delete-conversation]");
+    if (deleteButton) { deleteConversation(deleteButton.dataset.deleteConversation); return; }
+    const button=event.target.closest("[data-conversation-id]");
+    if (button) openConversation(button.dataset.conversationId);
+  });
   $("#brand-button").addEventListener("click", showChat);
   $("#health-link").addEventListener("click", showHealth);
   $("#health-back").addEventListener("click", showChat);
-  $("#health-form").addEventListener("submit", saveHealthCheckin);
-  $("#energy-score").addEventListener("input", event => $("#energy-output").textContent=event.target.value);
-  $("#mood-score").addEventListener("input", event => $("#mood-output").textContent=event.target.value);
+  $("#health-chat-button").addEventListener("click", showChat);
   $("#collapse-sidebar").addEventListener("click", () => document.body.classList.add("sidebar-collapsed"));
   $("#open-sidebar").addEventListener("click", () => window.innerWidth <= 700 ? document.body.classList.add("sidebar-open") : document.body.classList.remove("sidebar-collapsed"));
   $("#close-sidebar").addEventListener("click", () => document.body.classList.remove("sidebar-open"));
@@ -44,11 +67,11 @@ function bindEvents() {
   $("#theme-toggle-side").addEventListener("click", toggleTheme);
   $("#theme-select").addEventListener("change", event => setThemePreference(event.target.value));
   $("#auth-form").addEventListener("submit", authenticate);
-  $("#signup-button").addEventListener("click", signUp);
   $("#password-form").addEventListener("submit", setPassword);
   $("#signout-button").addEventListener("click", signOut);
   $("#install-app").addEventListener("click", installApp);
   $("#install-app-settings").addEventListener("click", installApp);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && session?.access_token) syncCloudState(state.currentConversationId,{silent:true}).catch(()=>{}); });
 }
 
 function initInstall() {
@@ -97,7 +120,7 @@ function toggleTheme() { setThemePreference(document.documentElement.dataset.the
 function updateAccountUi() {
   const signedIn = Boolean(session?.access_token);
   const email = session?.user?.email || "私人空间已连接";
-  $("#connection-status").textContent = signedIn ? "已连接" : "未登录";
+  $("#connection-status").textContent = signedIn ? "已同步" : "未登录";
   $("#profile-name").textContent = signedIn ? email : "你的空间";
   $("#dialog-status").textContent = signedIn ? "已登录" : "未登录";
   $("#dialog-status-detail").textContent = signedIn ? email : "连接后启用私人记忆与跨设备同步";
@@ -106,6 +129,54 @@ function updateAccountUi() {
   $("#signout-button").hidden = !signedIn;
   $("#health-login").hidden = signedIn;
   $("#health-content").hidden = !signedIn;
+}
+
+function startCloudSync() {
+  if (syncTimer) clearInterval(syncTimer);
+  syncTimer = setInterval(() => {
+    if (!document.hidden && session?.access_token && !$(".send").disabled) syncCloudState(state.currentConversationId,{silent:true}).catch(()=>{});
+  },12000);
+}
+
+async function syncCloudState(preferredConversationId=state.currentConversationId,{silent=false}={}) {
+  if (!session?.access_token) return;
+  if (!silent) $("#connection-status").textContent="同步中…";
+  const [conversations,memories,goals] = await Promise.all([
+    getCloudJson("/rest/v1/conversations?select=id,title,created_at,updated_at&order=updated_at.desc&limit=50"),
+    getCloudJson("/rest/v1/memories?select=id,content,category,confidence,updated_at&active=eq.true&order=updated_at.desc&limit=100"),
+    getCloudJson("/rest/v1/goals?select=id,title,category,status,progress,target_date,why,updated_at&status=eq.active&order=updated_at.desc&limit=100")
+  ]);
+  state.conversations=conversations;
+  state.memories=memories;
+  state.goals=goals;
+  const validPreferred = preferredConversationId && conversations.some(item=>item.id===preferredConversationId);
+  state.currentConversationId = validPreferred ? preferredConversationId : conversations[0]?.id || null;
+  state.messages = state.currentConversationId ? await getCloudJson(`/rest/v1/messages?select=id,role,content,tags,created_at&conversation_id=eq.${encodeURIComponent(state.currentConversationId)}&order=created_at.asc`) : [];
+  persist();
+  renderConversationList();
+  renderMessages();
+  $("#connection-status").textContent="已同步";
+}
+
+async function getCloudJson(path) {
+  const response = await supabaseRequest(path);
+  if (!response.ok) throw new Error((await response.json().catch(()=>({}))).message || "云端同步失败");
+  return response.json();
+}
+
+function showSyncError(error) {
+  $("#connection-status").textContent="同步失败";
+  console.error(error);
+}
+
+async function openConversation(conversationId) {
+  if (conversationId===state.currentConversationId) { showChat(); return; }
+  state.currentConversationId=conversationId;
+  state.messages=[];
+  renderConversationList();
+  renderMessages();
+  showChat();
+  try { await syncCloudState(conversationId); scrollChat(); } catch (error) { showSyncError(error); }
 }
 
 function showChat() {
@@ -127,12 +198,6 @@ async function showHealth() {
   if (await ensureSession()) await loadHealthData();
 }
 
-function setTodayDate() {
-  const now = new Date();
-  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0,10);
-  $("#health-date").value = local;
-}
-
 function usePrompt(type) {
   const prompts = {
     daily:"我想记录一下今天发生的事。",
@@ -146,9 +211,10 @@ function usePrompt(type) {
 
 function newChat() {
   showChat();
-  if (state.messages.length && !confirm("开始新对话？当前对话仍会保存在你的私人记录里。")) return;
+  state.currentConversationId = null;
   state.messages = [];
   persist();
+  renderConversationList();
   renderMessages();
   $("#message-input").focus();
   document.body.classList.remove("sidebar-open");
@@ -167,8 +233,11 @@ async function sendMessage(event) {
     const activeSession = await ensureSession();
     const result = activeSession ? await askEdgeFunction(text) : await demoReply(text);
     state.messages.push({ role:"assistant", content:result.assistant, tags:result.tags || [], created_at:new Date().toISOString() });
-    for (const memory of result.memories || []) if (!state.memories.includes(memory)) state.memories.unshift(memory);
-    state.memories = state.memories.slice(0, 20);
+    if (activeSession && result.conversation_id) {
+      state.currentConversationId=result.conversation_id;
+      await syncCloudState(result.conversation_id,{silent:true});
+      if (result.health_checkin) await loadHealthData().catch(()=>{});
+    }
   } catch (error) {
     state.messages.push({ role:"assistant", content:`暂时连不上你的 Life Agent。请稍后再试。\n\n${error.message}`, tags:[] });
   } finally {
@@ -193,8 +262,65 @@ function requestEdgeFunction(message, accessToken) {
   return fetch(`${cfg.supabaseUrl}/functions/v1/${cfg.edgeFunctionName || "life-agent"}`, {
     method:"POST",
     headers:{ "Content-Type":"application/json", apikey:cfg.supabaseAnonKey, Authorization:`Bearer ${accessToken}` },
-    body:JSON.stringify({ message, recent_messages:state.messages.slice(-10), context:{ memories:state.memories, goals:state.goals } })
+    body:JSON.stringify({
+      message,
+      conversation_id:state.currentConversationId,
+      recent_messages:state.messages.slice(-12),
+      context:{ memories:state.memories.map(item=>item.content || item), goals:state.goals.map(item=>({title:item.title,status:item.status,progress:item.progress})) },
+      client_context:{ time_zone:Intl.DateTimeFormat().resolvedOptions().timeZone, local_time:new Date().toISOString() }
+    })
   });
+}
+
+async function toggleDictation() {
+  if (mediaRecorder?.state === "recording") { mediaRecorder.stop(); return; }
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) { alert("这个浏览器暂不支持录�，请用最新版 Chrome、Edge 或 Safari。"); return; }
+  if (!(await ensureSession())) { $("#settings-dialog").showModal(); return; }
+  try {
+    microphoneStream=await navigator.mediaDevices.getUserMedia({audio:true});
+    audioChunks=[];
+    mediaRecorder=new MediaRecorder(microphoneStream);
+    mediaRecorder.addEventListener("dataavailable",event=>{ if (event.data.size) audioChunks.push(event.data); });
+    mediaRecorder.addEventListener("stop",finishDictation,{once:true});
+    mediaRecorder.start();
+    $("#mic-button").classList.add("recording");
+    $("#mic-button").setAttribute("aria-label","停止录音");
+    $("#composer-status").textContent="正在录�… 再按一次停止";
+  } catch (error) { alert(error.name === "NotAllowedError" ? "请允许麦克风权限后再试。" : "无法开始录音，请稍后再试。"); }
+}
+
+async function finishDictation() {
+  const mimeType=mediaRecorder?.mimeType || "audio/webm";
+  microphoneStream?.getTracks().forEach(track=>track.stop());
+  $("#mic-button").classList.remove("recording");
+  $("#mic-button").setAttribute("aria-label","开始录音");
+  $("#composer-status").textContent="正在转换成文字…";
+  $("#mic-button").disabled=true;
+  try {
+    const result=await transcribeAudio(new Blob(audioChunks,{type:mimeType}),mimeType);
+    const input=$("#message-input");
+    input.value=[input.value.trim(),result.text?.trim()].filter(Boolean).join(input.value.trim() ? "\n" : "");
+    resizeComposer({target:input});
+    input.focus();
+  } catch (error) { alert(`语音转文字失败：${error.message}`); }
+  finally {
+    $("#mic-button").disabled=false;
+    $("#composer-status").textContent="Enter 发送 · Shift + Enter 换行";
+    mediaRecorder=null; microphoneStream=null; audioChunks=[];
+  }
+}
+
+async function transcribeAudio(blob,mimeType) {
+  let activeSession=await ensureSession();
+  if (!activeSession) throw new Error("请先登录");
+  const form=new FormData();
+  form.append("audio",blob,mimeType.includes("mp4") ? "recording.m4a" : "recording.webm");
+  const send=token=>fetch(`${cfg.supabaseUrl}/functions/v1/${cfg.edgeFunctionName || "life-agent"}`,{method:"POST",headers:{apikey:cfg.supabaseAnonKey,Authorization:`Bearer ${token}`},body:form});
+  let response=await send(activeSession.access_token);
+  if (response.status===401) { activeSession=await ensureSession(true); if (!activeSession) throw new Error("登录已过期"); response=await send(activeSession.access_token); }
+  const result=await response.json().catch(()=>({}));
+  if (!response.ok) throw new Error(result.error || "服务暂时不可用");
+  return result;
 }
 
 async function ensureSession(forceRefresh=false) {
@@ -245,11 +371,26 @@ function addTyping() {
   $("#messages").append(typing);
 }
 
+function renderConversationList() {
+  const rows = state.conversations || [];
+  $("#history-list").innerHTML = `${state.currentConversationId ? "" : '<div class="history-row active"><button class="history-item">新的对话</button></div>'}${rows.map(conversation=>`<div class="history-row ${conversation.id===state.currentConversationId ? "active" : ""}"><button class="history-item" data-conversation-id="${conversation.id}">${escapeHtml(conversation.title || "新的对话")}</button><button class="delete-chat" data-delete-conversation="${conversation.id}" aria-label="删除对话" title="删除对话">×</button></div>`).join("")}`;
+}
+
+async function deleteConversation(conversationId) {
+  const conversation=state.conversations.find(item=>item.id===conversationId);
+  if (!conversation || !confirm(`删除“${conversation.title || "这个对话"}”？此操作无法撤销。`)) return;
+  try {
+    const response=await supabaseRequest(`/rest/v1/conversations?id=eq.${encodeURIComponent(conversationId)}`,{method:"DELETE"});
+    if (!response.ok) throw new Error((await response.json().catch(()=>({}))).message || "删除失败");
+    if (state.currentConversationId===conversationId) state.currentConversationId=null;
+    await syncCloudState(null);
+  } catch (error) { alert(error.message); }
+}
+
 function renderMessages() {
   const hasMessages = state.messages.length > 0;
   $("#empty-state").hidden = hasMessages;
   $("#suggestions").hidden = hasMessages;
-  $("#current-chat-title").textContent = hasMessages ? state.messages.find(message => message.role === "user")?.content.slice(0,32) || "新的对话" : "新的对话";
   $("#messages").innerHTML = state.messages.map(message => `<div class="message ${message.role}"><div class="message-content">${message.role === "assistant" ? '<div class="assistant-head"><span class="assistant-mark">L</span>Life Agent</div>' : ""}${message.role === "assistant" ? renderMarkdown(message.content) : escapeHtml(message.content)}${message.tags?.length ? `<div class="tags">${message.tags.map(tag=>`<span class="tag">${escapeHtml(tag)}</span>`).join("")}</div>`:""}</div></div>`).join("");
 }
 
@@ -279,54 +420,25 @@ async function loadHealthData() {
   }
 }
 
-async function saveHealthCheckin(event) {
-  event.preventDefault();
-  const activeSession = await ensureSession();
-  if (!activeSession) { $("#settings-dialog").showModal(); return; }
-  const valueOrNull = id => $(id).value === "" ? null : Number($(id).value);
-  const body = {
-    user_id:activeSession.user.id,
-    checkin_date:$("#health-date").value,
-    sleep_hours:valueOrNull("#sleep-hours"),
-    energy:valueOrNull("#energy-score"),
-    mood:valueOrNull("#mood-score"),
-    exercise_minutes:valueOrNull("#exercise-minutes"),
-    note:$("#health-note").value.trim() || null,
-    updated_at:new Date().toISOString()
-  };
-  $("#health-status").textContent="正在保存…";
-  try {
-    const response = await supabaseRequest("/rest/v1/daily_checkins?on_conflict=user_id,checkin_date", { method:"POST", headers:{ "Content-Type":"application/json", Prefer:"resolution=merge-duplicates,return=representation" }, body:JSON.stringify(body) });
-    if (!response.ok) throw new Error((await response.json().catch(()=>({}))).message || "保存失败");
-    $("#health-status").textContent="已安全保存到你的私人账号";
-    await loadHealthData();
-  } catch (error) { $("#health-status").textContent=error.message; }
-}
-
 function renderHealth() {
-  const today = $("#health-date").value;
+  const today = localDateString();
   const latest = healthRows.find(row => row.checkin_date === today) || healthRows[0];
   $("#health-sleep").textContent=latest?.sleep_hours ?? "—";
   $("#health-energy").textContent=latest?.energy ?? "—";
   $("#health-mood").textContent=latest?.mood ?? "—";
   $("#health-exercise").textContent=latest?.exercise_minutes ?? "—";
-  if (latest?.checkin_date === today) {
-    $("#sleep-hours").value=latest.sleep_hours ?? "";
-    $("#energy-score").value=latest.energy ?? 5; $("#energy-output").textContent=$("#energy-score").value;
-    $("#mood-score").value=latest.mood ?? 5; $("#mood-output").textContent=$("#mood-score").value;
-    $("#exercise-minutes").value=latest.exercise_minutes ?? "";
-    $("#health-note").value=latest.note ?? "";
-  }
   const rows = [...healthRows].reverse();
-  $("#health-chart").innerHTML = rows.length ? rows.map(row => `<div class="trend-day"><div class="trend-bars"><i class="energy-bar" style="height:${(row.energy || 0)*10}%" title="能量 ${row.energy ?? '—'}"></i><i class="mood-bar" style="height:${(row.mood || 0)*10}%" title="心情 ${row.mood ?? '—'}"></i></div><span>${formatDay(row.checkin_date)}</span></div>`).join("") : '<div class="health-empty">还没有记录。保存今天后，趋势会出现在这里。</div>';
+  $("#health-chart").innerHTML = rows.length ? rows.map(row => `<div class="trend-day"><div class="trend-bars"><i class="energy-bar" style="height:${(row.energy || 0)*10}%" title="能量 ${row.energy ?? '—'}"></i><i class="mood-bar" style="height:${(row.mood || 0)*10}%" title="心情 ${row.mood ?? '—'}"></i></div><span>${formatDay(row.checkin_date)}</span></div>`).join("") : '<div class="health-empty">还没有记录。直接在对话里告诉 Life Agent，你的趋势会自动出现在这里。</div>';
 }
+
+function localDateString() { const now=new Date(); return new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,10); }
 
 function formatDay(value) { const [,month,day]=value.split("-"); return `${Number(month)}/${Number(day)}`; }
 
 async function authenticate(event) {
   event.preventDefault();
   if (!configured || session) return;
-  const email = $("#auth-email").value.trim();
+  const email = allowedEmail;
   const password = $("#auth-password").value;
   if (!email || password.length < 8) { showAuthStatus("无法登录", "请输入 Email 和至少 8 位密码"); return; }
   showAuthStatus("登录中", email);
@@ -334,19 +446,6 @@ async function authenticate(event) {
   const data = await response.json().catch(()=>({}));
   if (!response.ok) { showAuthStatus("登录失败", data.error_description || data.msg || "账号或密码不正确"); return; }
   saveAuthSession(data); location.reload();
-}
-
-async function signUp() {
-  if (!configured || session) return;
-  const email = $("#auth-email").value.trim();
-  const password = $("#auth-password").value;
-  if (!email || password.length < 8) { showAuthStatus("无法注册", "请输入 Email 和至少 8 位密码"); return; }
-  showAuthStatus("注册中", email);
-  const response = await fetch(`${cfg.supabaseUrl}/auth/v1/signup`, { method:"POST", headers:{ "Content-Type":"application/json", apikey:cfg.supabaseAnonKey }, body:JSON.stringify({ email, password }) });
-  const data = await response.json().catch(()=>({}));
-  if (!response.ok) { showAuthStatus("注册失败", data.error_description || data.msg || "请检查账号资料"); return; }
-  if (data.access_token) { saveAuthSession(data); location.reload(); return; }
-  showAuthStatus("注册成功", "请完成 Email 验证，然后使用密码登录");
 }
 
 async function setPassword(event) {
@@ -394,4 +493,3 @@ function resizeComposer(event) { const el=event.target; el.style.height="auto"; 
 function scrollChat() { requestAnimationFrame(() => $("#chat-scroll").scrollTo({ top:$("#chat-scroll").scrollHeight, behavior:"smooth" })); }
 
 init();
-
