@@ -274,7 +274,7 @@ function requestEdgeFunction(message, accessToken) {
 
 async function toggleDictation() {
   if (mediaRecorder?.state === "recording") { mediaRecorder.stop(); return; }
-  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) { alert("这个浏览器暂不支持录�，请用最新版 Chrome、Edge 或 Safari。"); return; }
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) { alert("这个浏览器暂不支持录音，请用最新版 Chrome、Edge 或 Safari。"); return; }
   if (!(await ensureSession())) { $("#settings-dialog").showModal(); return; }
   try {
     microphoneStream=await navigator.mediaDevices.getUserMedia({audio:true});
@@ -285,7 +285,7 @@ async function toggleDictation() {
     mediaRecorder.start();
     $("#mic-button").classList.add("recording");
     $("#mic-button").setAttribute("aria-label","停止录音");
-    $("#composer-status").textContent="正在录�… 再按一次停止";
+    $("#composer-status").textContent="正在录音… 再按一次停止";
   } catch (error) { alert(error.name === "NotAllowedError" ? "请允许麦克风权限后再试。" : "无法开始录音，请稍后再试。"); }
 }
 
